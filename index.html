@@ -303,19 +303,23 @@ var MAXV = 2400;
 var DEFAULT_GLYPHS = ["🍒","🍇","🍊","🍋","🍑","🍈","🍉"];
 
 /* ================= 默认图案（所有人打开都能看到的图案）=================
-   把 7 张图片上传到仓库根目录，命名为 1.png ~ 7.png，就会自动生效。
-   对应关系：1.png → 1 级，…，7.png → 7 级（最大球）。
-   如果图片是 jpg / webp，把下面每一项的后缀改掉即可，例如 "1.jpg"。
-   某项留空字符串 "" 表示该级不用图片（回退成 emoji）。
-   路径区分大小写，必须是相对 index.html 的路径。                        */
+   把 7 张图片上传到仓库根目录，命名为 1 ~ 7，就会自动生效。
+   对应关系：1 → 1 级，… ，7 → 7 级（最大球）。
+
+   每一级可以写「一个文件名」或「一组候选文件名」。
+   写一组时，代码会按顺序尝试，第一个能加载成功的生效——
+   所以不管你用的是 png 还是 jpg，都不用改代码。
+   想指定别的名字，直接改下面每一项即可（例如 ["watermelon1.jpg"]）。
+   某一级写空数组 [] 表示不用图片（回退成 emoji）。
+   路径区分大小写，且必须相对于 index.html。                          */
 var DEFAULT_IMAGES = [
-  "1.png",   // 1 级
-  "2.png",   // 2 级
-  "3.png",   // 3 级
-  "4.png",   // 4 级
-  "5.png",   // 5 级
-  "6.png",   // 6 级
-  "7.png"    // 7 级（最大）
+  ["1.png", "1.jpg", "1.jpeg", "1.webp"],   // 1 级
+  ["2.png", "2.jpg", "2.jpeg", "2.webp"],   // 2 级
+  ["3.png", "3.jpg", "3.jpeg", "3.webp"],   // 3 级
+  ["4.png", "4.jpg", "4.jpeg", "4.webp"],   // 4 级
+  ["5.png", "5.jpg", "5.jpeg", "5.webp"],   // 5 级
+  ["6.png", "6.jpg", "6.jpeg", "6.webp"],   // 6 级
+  ["7.png", "7.jpg", "7.jpeg", "7.webp"]    // 7 级（最大）
 ];
 var LEVEL_COLORS = ["#ef4444","#a855f7","#f97316","#eab308","#ec4899","#10b981","#0ea5e9"];
 var NAMES = ["1 级","2 级","3 级","4 级","5 级","6 级","7 级（最大）"];
@@ -332,6 +336,7 @@ function colorOf(lv){ return LEVEL_COLORS[lv - 1] || "#888"; }
 var skins = loadSkins();
 var imgCache = {};         // 用户自己上传的图片
 var defaultImgCache = {};  // DEFAULT_IMAGES 里的默认图片
+var defaultImgSrc = {};    // 每级最终加载成功的默认图 URL
 
 function loadSkins(){
   var out = {};
@@ -375,25 +380,38 @@ function refreshImageCache(){
   }
 }
 
-/* 加载 DEFAULT_IMAGES 里配置的默认图案 */
+/* 加载 DEFAULT_IMAGES 里配置的默认图案
+   每级可以是一组候选文件名，按顺序尝试，第一个加载成功的生效 */
 function loadDefaultImages(){
   for (var lv = 1; lv <= MAX_LEVEL; lv++){
-    var url = DEFAULT_IMAGES[lv - 1];
-    if (!url) continue;
-    (function(L, u){
-      var im = new Image();
-      im.onload = function(){
-        defaultImgCache[L] = im;
-        if (typeof syncVisuals === "function") syncVisuals(L);
-      };
-      im.onerror = function(){
-        delete defaultImgCache[L];
-        if (window.console){
-          console.warn("[合成大球] 默认图案加载失败，检查文件是否存在、后缀和大小写: " + u);
+    var cands = DEFAULT_IMAGES[lv - 1];
+    if (!cands) continue;
+    if (typeof cands === "string") cands = [cands];
+    if (!cands.length) continue;
+
+    (function(L, list){
+      var idx = 0;
+      function tryNext(){
+        if (idx >= list.length){
+          delete defaultImgCache[L];
+          delete defaultImgSrc[L];
+          if (window.console){
+            console.warn("[合成大球] " + L + " 级默认图案全部尝试失败，已回退 emoji。检查过的文件: " + list.join(" , "));
+          }
+          return;
         }
-      };
-      im.src = u;
-    })(lv, url);
+        var url = list[idx++];
+        var im = new Image();
+        im.onload = function(){
+          defaultImgCache[L] = im;
+          defaultImgSrc[L] = url;
+          if (typeof syncVisuals === "function") syncVisuals(L);
+        };
+        im.onerror = function(){ tryNext(); };
+        im.src = url;
+      }
+      tryNext();
+    })(lv, cands);
   }
 }
 
@@ -406,7 +424,7 @@ function ballImageOf(lv){
   var s = skins[lv];
   if (s && s.img && imgCache[lv]) return { el: imgCache[lv], url: s.img };
   if (s && s.glyph) return null;
-  if (defaultImgCache[lv]) return { el: defaultImgCache[lv], url: DEFAULT_IMAGES[lv - 1] };
+  if (defaultImgCache[lv]) return { el: defaultImgCache[lv], url: defaultImgSrc[lv] };
   return null;
 }
 
