@@ -266,7 +266,7 @@
     <p class="hint">
       共 7 级，7 级为最大球。每级可单独设置：<br>
       点「图片」上传你自己的图，或在输入框里打一个符号 / emoji。<br>
-      设置会自动保存在本机浏览器里。
+      这里的设置只存在你自己的浏览器里，不影响别人。
     </p>
     <div class="slots" id="slots"></div>
     <div class="row">
@@ -301,6 +301,22 @@ var POS_CORR = 0.85;
 var MAXV = 2400;
 
 var DEFAULT_GLYPHS = ["🍒","🍇","🍊","🍋","🍑","🍈","🍉"];
+
+/* ================= 默认图案（所有人打开都能看到的图案）=================
+   把 7 张图片上传到仓库根目录，命名为 1.png ~ 7.png，就会自动生效。
+   对应关系：1.png → 1 级，…，7.png → 7 级（最大球）。
+   如果图片是 jpg / webp，把下面每一项的后缀改掉即可，例如 "1.jpg"。
+   某项留空字符串 "" 表示该级不用图片（回退成 emoji）。
+   路径区分大小写，必须是相对 index.html 的路径。                        */
+var DEFAULT_IMAGES = [
+  "1.png",   // 1 级
+  "2.png",   // 2 级
+  "3.png",   // 3 级
+  "4.png",   // 4 级
+  "5.png",   // 5 级
+  "6.png",   // 6 级
+  "7.png"    // 7 级（最大）
+];
 var LEVEL_COLORS = ["#ef4444","#a855f7","#f97316","#eab308","#ec4899","#10b981","#0ea5e9"];
 var NAMES = ["1 级","2 级","3 级","4 级","5 级","6 级","7 级（最大）"];
 
@@ -314,7 +330,8 @@ function colorOf(lv){ return LEVEL_COLORS[lv - 1] || "#888"; }
    皮肤数据：每级 { img: dataURL|null, glyph: string|null }
    ========================================================= */
 var skins = loadSkins();
-var imgCache = {};   // level -> HTMLImageElement
+var imgCache = {};         // 用户自己上传的图片
+var defaultImgCache = {};  // DEFAULT_IMAGES 里的默认图片
 
 function loadSkins(){
   var out = {};
@@ -356,6 +373,41 @@ function refreshImageCache(){
       delete imgCache[lv];
     }
   }
+}
+
+/* 加载 DEFAULT_IMAGES 里配置的默认图案 */
+function loadDefaultImages(){
+  for (var lv = 1; lv <= MAX_LEVEL; lv++){
+    var url = DEFAULT_IMAGES[lv - 1];
+    if (!url) continue;
+    (function(L, u){
+      var im = new Image();
+      im.onload = function(){
+        defaultImgCache[L] = im;
+        if (typeof syncVisuals === "function") syncVisuals(L);
+      };
+      im.onerror = function(){
+        delete defaultImgCache[L];
+        if (window.console){
+          console.warn("[合成大球] 默认图案加载失败，检查文件是否存在、后缀和大小写: " + u);
+        }
+      };
+      im.src = u;
+    })(lv, url);
+  }
+}
+
+/* 决定某一级最终用哪张图：
+   1) 你自己在面板里上传的图片
+   2) DEFAULT_IMAGES 配置的默认图片
+   3) 都没有 → 返回 null，改用符号 / emoji
+   注意：手动输入的符号会盖过默认图，方便你临时试效果。 */
+function ballImageOf(lv){
+  var s = skins[lv];
+  if (s && s.img && imgCache[lv]) return { el: imgCache[lv], url: s.img };
+  if (s && s.glyph) return null;
+  if (defaultImgCache[lv]) return { el: defaultImgCache[lv], url: DEFAULT_IMAGES[lv - 1] };
+  return null;
 }
 
 /* 当前该级实际显示：优先图片，其次自定义字符，最后默认 emoji */
@@ -721,7 +773,8 @@ function drawBall(c, level, x, y, r, popScale, alpha){
   c.fillStyle = colorOf(level);
   c.fill();
 
-  var img = imgCache[level];
+  var imgInfo = ballImageOf(level);
+  var img = imgInfo ? imgInfo.el : null;
   if (img){
     c.save();
     c.beginPath();
@@ -948,9 +1001,9 @@ function styleBallEl(el, level, size){
   el.textContent = "";
   el.style.width = size + "px";
   el.style.height = size + "px";
-  var img = imgCache[level];
-  if (img){
-    el.style.backgroundImage = "url('" + skins[level].img + "')";
+  var imgInfo = ballImageOf(level);
+  if (imgInfo){
+    el.style.backgroundImage = "url('" + imgInfo.url + "')";
     el.style.backgroundColor = colorOf(level);
     el.style.fontSize = "0px";
   } else {
@@ -1130,6 +1183,7 @@ window.addEventListener("keydown", function(e){
    启动
    ========================================================= */
 refreshImageCache();
+loadDefaultImages();
 buildPanel();
 resetGame();
 
